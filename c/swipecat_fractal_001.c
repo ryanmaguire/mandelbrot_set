@@ -15,110 +15,140 @@
  *                                                                            *
  *  You should have received a copy of the GNU General Public License         *
  *  along with mandelbrot_set.  If not, see <https://www.gnu.org/licenses/>.  *
- ******************************************************************************
+ ******************************************************************************/
 
-/*  Avoid warnings with MSVC for using standard library functions.            */
-#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
-#define _CRT_SECURE_NO_DEPRECATE
-#endif
-
+/*  FILE, fopen, fputc, puts, and other input / output functions found here.  */
 #include <stdio.h>
+
+/*  exp and trig functions provided here.                                     */
 #include <math.h>
 
-#define PI_BY_TWO 1.5707963267948966
+/*  Some implementations of libm provide pi / 2, some don't. Declare this as  *
+ *  a macro for improved portability.                                         */
+#define PI_BY_TWO (+1.5707963267948966)
 
-struct complex_number {
-    double real, imag;
-};
-
+/*  Function for drawing a modified Mandelbrot set.                           */
 int main(void)
 {
-    const unsigned int width = 1200U;
-    const unsigned int height = 960U;
-    const unsigned int imax = 100U;
+    /*  The number of pixels in the x and y axes, respectively.               */
+    const unsigned int width = 1024U;
+    const unsigned int height = 1024U;
+
+    /*  The maximum number of iterations allowed.                             */
+    const unsigned int max_iters = 100U;
+
+    /*  Threshold for the coloring scheme.                                    */
     const double zmax = 150.0;
 
+    /*  Setup parameters for the image. These are the bounds of the PPM.      */
     const double x_min = -6.6;
     const double x_max = -0.4;
-    const double y_min = -3.1;
-    const double y_max = 3.1;
+    const double y_min = -3.5;
+    const double y_max = +3.5;
 
-    const double x_factor = (x_max - x_min) / ((double)width - 1.0);
-    const double y_factor = (y_max - y_min) / ((double)height - 1.0);
+    /*  Scale factors for converting from pixels to points.                   */
+    const double x_factor = (x_max - x_min) / (double)(width - 1U);
+    const double y_factor = (y_max - y_min) / (double)(height - 1U);
 
-    unsigned int x, y, iters;
+    /*  Variables for looping over the x and y components of the picture.     */
+    unsigned int x, y;
+
+    /*  Index for keeping track of the number of iterations performed.        */
+    unsigned int iters;
+
+    /*  Variables for the color in RGB format.                                */
     unsigned char red, green, blue;
-    double c_x, c_y, backgnd, val, exp_x;
-    struct complex_number z, c;
 
-    FILE *fp = fopen("swipecat_fractal_001.ppm", "w");
+    /*  Dummy variable for creating the color scheme for the drawing.         */
+    double val;
 
+    /*  Declare a variable for the output file and give it write permission.  */
+    FILE * const fp = fopen("swipecat_fractal_001.ppm", "w");
+
+    /*  fopen returns NULL on failure. Check for this.                        */
     if (!fp)
     {
-        puts("fopen failed and returned NULL. Aborting.");
+        puts("fopen return NULL. Aborting.");
         return -1;
     }
 
-#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
-    fprintf(fp, "P3\n%u %u\n255\n", width, height);
-#else
+    /*  Otherwise print the preamble to the PPM file.                         */
     fprintf(fp, "P6\n%u %u\n255\n", width, height);
-#endif
 
+    /*  Loop through each pixel for the y-axis.                               */
     for (y = 0U; y < height; ++y)
     {
-        c_y = y_max - (double)y * y_factor;
+        /*  Calculate the imaginary part corresponding to these pixels.       */
+        const double c_y = y_max - (double)y * y_factor;
+
+        /*  Loop through each pixel in the x-axis.                            */
         for (x = 0U; x < width; ++x)
         {
-            c_x = x_min + (double)x * x_factor;
-            c.real = c_x;
-            c.imag = c_y;
-            z.real = 0.0;
-            z.imag = 0.0;
-            backgnd = 0.0;
-            for (iters = 0U; iters < imax; ++iters)
+            /*  Calculate the real part corresponding to this pixel.          */
+            const double c_x = x_min + (double)x * x_factor;
+
+            /*  Initialize the complex number to the origin.                  */
+            double xn = 0.0;
+            double yn = 0.0;
+
+            /*  Factor used for creating a gradient in color.                 */
+            double background = 0.0;
+
+            /*  Start the iteration process. Stop when the iteration diverges *
+             *  outside of the circle, or when too many iterations are done.  */
+            for (iters = 0U; iters < max_iters; ++iters)
             {
-                exp_x = exp(z.real);
-                z.real = PI_BY_TWO*(exp_x*cos(z.imag) - z.real) + c.real;
-                z.imag = PI_BY_TWO*(exp_x*sin(z.imag) - z.imag) + c.imag;
-                if (fabs(z.real) >= zmax)
+                /*  Modified Mandelbrot iterate. Defined by                   *
+                 *  z_{n+1} = (pi/2)(exp(z_{n}) - z_{n}) + z_{0}.             */
+                const double exp_x = exp(xn);
+                xn = PI_BY_TWO*(exp_x*cos(yn) - xn) + c_x;
+                yn = PI_BY_TWO*(exp_x*sin(yn) - yn) + c_y;
+
+                /*  Once the iterate gets too big, abort the computation.     */
+                if (fabs(xn) >= zmax)
                 {
-                    backgnd = log(log(fabs(z.real) + 1.0) * 0.33333333333);
-                    backgnd = log(fabs((double)iters - backgnd));
-                    backgnd = backgnd * 0.3076923076923077;
+                    /*  Gradient factor for coloring the image.               */
+                    background = log(log(fabs(xn) + 1.0) * 0.3333333333333);
+                    background = log(fabs((double)iters - background));
+                    background = background * 0.3076923076923077;
                     break;
                 }
             }
 
-            val = 1.0 - fabs(1.0 - backgnd);
-            if (val < 0.0)
-                val = 0.0;
+            /*  Factor used for coloring.                                     */
+            val = 1.0 - fabs(1.0 - background);
 
-            if (backgnd <= 1.0)
+            /*  Non-positive corresponds to the modified Mandelbrot set.      */
+            if (val <= 0.0)
+            {
+                red = 0x00U;
+                green = 0x00U;
+                blue = 0x00U;
+            }
+
+            else if (background <= 1.0)
             {
                 red = (unsigned char)(255.0 * pow(val, 4.0));
                 green = (unsigned char)(255.0 * pow(val, 2.5));
                 blue = (unsigned char)(unsigned char)(255.0 * val);
             }
+
             else
             {
                 red = (unsigned char)(255.0 * val);
                 green = (unsigned char)(255.0 * pow(val, 1.5));
                 blue = (unsigned char)(255.0 * pow(val, 3.0));
             }
-#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
-            fprintf(fp, "%u %u %u\n", red, green, blue);
-#else
+
+            /*  Add this current color to the image.                          */
             fputc(red, fp);
             fputc(green, fp);
             fputc(blue, fp);
-#endif
         }
     }
 
+    /*  Close the file and return.                                            */
     fclose(fp);
     return 0;
-
 }
-
-              
+/*  End of main.                                                              */

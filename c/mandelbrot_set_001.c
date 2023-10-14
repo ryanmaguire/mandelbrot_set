@@ -15,75 +15,188 @@
  *                                                                            *
  *  You should have received a copy of the GNU General Public License         *
  *  along with mandelbrot_set.  If not, see <https://www.gnu.org/licenses/>.  *
+ ******************************************************************************
+ *  Purpose:                                                                  *
+ *      Draw the Mandelbrot set.                                              *
+ ******************************************************************************
+ *  Author: Ryan Maguire                                                      *
+ *  Date:   June 2, 2021                                                      *
  ******************************************************************************/
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
 
-void color(int red, int green, int blue, FILE *fp)
+/*  FILE, fopen, fputc, puts, and other input / output functions found here.  */
+#include <stdio.h>
+
+/******************************************************************************
+ *  Function:                                                                 *
+ *      color                                                                 *
+ *  Purpose:                                                                  *
+ *      Writes an RGB color to a PPM file.                                    *
+ *  Arguments:                                                                *
+ *      red (unsigned char):                                                  *
+ *          The value of the red channel. 8-bits.                             *
+ *      green (unsigned char):                                                *
+ *          The value of the green channel. 8-bits.                           *
+ *      blue (unsigned char):                                                 *
+ *          The value of the blue channel. 8-bits.                            *
+ *      fp (FILE *):                                                          *
+ *          A pointer to the PPM file.                                        *
+ *  Output:                                                                   *
+ *      None (void).                                                          *
+ ******************************************************************************/
+static void
+color(unsigned char red, unsigned char green, unsigned char blue, FILE *fp)
 {
-    fputc((char)red,   fp);
-    fputc((char)green, fp);
-    fputc((char)blue,  fp);
+    fputc(red, fp);
+    fputc(green, fp);
+    fputc(blue, fp);
 }
 
-int main(int argc, char *argv[])
+/******************************************************************************
+ *  Function:                                                                 *
+ *      complex_abs_squared                                                   *
+ *  Purpose:                                                                  *
+ *      Computes the square of the complex modulus, f(z) = |z|^2.             *
+ *  Arguments:                                                                *
+ *      re (double):                                                          *
+ *          The real part of the complex number.                              *
+ *      im (double):                                                          *
+ *          The imaginary part of the complex number.                         *
+ *  Output:                                                                   *
+ *      abs_sq (double):                                                      *
+ *          The square of the absolute value of z = re + i*im.                *
+ ******************************************************************************/
+static double
+complex_abs_squared(double re, double im)
 {
+    return re*re + im*im;
+}
+
+/******************************************************************************
+ *  Function:                                                                 *
+ *      mandelbrot_iter                                                       *
+ *  Purpose:                                                                  *
+ *      Computes the Mandelbrot iteration, z_{n+1} = z_{n}^2 + z_{0}.         *
+ *  Arguments:                                                                *
+ *      xn (double *):                                                        *
+ *          The real part of z_{n}.                                           *
+ *      yn (double *):                                                        *
+ *          The imaginary part of z_{n}.                                      *
+ *      x0 (const double *):                                                  *
+ *          The real part of z_{0}.                                           *
+ *      y0 (const double *):                                                  *
+ *          The imaginary part of z_{0}.                                      *
+ *  Output:                                                                   *
+ *      None (void).                                                          *
+ ******************************************************************************/
+static void
+mandelbrot_iter(double *xn, double *yn, const double *x0, const double *y0)
+{
+    /*  Avoiding overwriting the real part of the complex number.             */
+    const double tmp = *xn;
+
+    /*  Calculate the new value. z_{n+1} = z_{n}^2 + z_{0}.                   */
+    *xn = *xn * *xn - *yn * *yn + *x0;
+    *yn = 2.0 * tmp * *yn + *y0;
+}
+
+/*  Function for drawing the Mandelbrot set.                                  */
+int main(void)
+{
+    /*  The number of pixels in both the x and y axes. The PPM is a square.   */
+    const unsigned int size = 1024U;
+
+    /*  Half the above constant, used for the scale factor.                   */
+    const unsigned int half_size = size >> 1U;
+
+    /*  Variables for looping over the x and y coordinates in the plane.      */
+    unsigned int x, y;
+
+    /*  Index for keeping track of the number of iterations performed.        */
+    unsigned char iters;
+
+    /*  "Zoom" factor for scaling the image so the Mandelbrot set fits better.*/
+    const double zoom = 0.65;
+
+    /*  Scale factor for converting from pixels (xpx, ypx) to points (x, y).  */
+    const double scale_factor = 2.0 / (zoom * size);
+
+    /*  The starting parameters for the x and y values. z0 = x0 + i*y0.       */
+    const double x_start = -0.8;
+    const double y_start = +0.0;
+
+    /*  Translations used for converting between pixels and points.           */
+    const double x_shift = x_start - scale_factor * (double)half_size;
+    const double y_shift = y_start - scale_factor * (double)half_size;
+
+    /*  The radius of the circle. Points outside of this diverge.             */
+    const double radius = 4.0;
+    const double radius_squared = radius*radius;
+
+    /*  Maximum number of iterations allowed in the computation.              */
+    const unsigned char max_iters = 0xFFU;
+
+    /*  Color factors to brighten the region around the Mandelbrot set.       */
+    const unsigned char threshold = 0x40U;
+    const unsigned char color_scale = 0x04U;
+
     /*  Declare a variable for the output file and give it write permission.  */
-    FILE *fp;
-    fp = fopen("mandelbrot_set_001.ppm", "w");
-    int size = 1024;
-    int brightness, x, y, i;
-    double pr, pi;
-    double newRe, newIm, oldRe, oldIm;
-    double zoom = 0.65;
-    double moveX = -1.0;
-    double moveY = 0.0;
-    double radius = 4.0;
-    int maxIterations = 256;
+    FILE * const fp = fopen("mandelbrot_set_001.ppm", "w");
 
-    fprintf(fp, "P6\n%d %d\n255\n", size, size);
+    /*  fopen returns NULL on failure. Check for this.                        */
+    if (!fp)
+    {
+        puts("fopen returned NULL. Aborting.");
+        return -1;
+    }
 
-    double radius_squared = radius*radius;
+    /*  Otherwise print the preamble to the PPM file.                         */
+    fprintf(fp, "P6\n%u %u\n255\n", size, size);
 
-    //  Loop through each pixel.
-    for(y = 0; y < size; y++){
-        for(x = 0; x < size; x++){
+    /*  Loop through each pixel for the y-axis.                               */
+    for(y = 0U; y < size; y++)
+    {
+        /*  And each pixel in the x-axis.                                     */
+        for(x = 0U; x < size; x++)
+        {
+            /*  Calculate the location of the current point in the plane.     */
+            const double x0 = x * scale_factor + x_shift;
+            const double y0 = y * scale_factor + y_shift;
 
-            // Calculate the location of the current point being calculated.
-            pr = (x - size / 2) / (0.5 * zoom * size) + moveX;
-            pi = (y - size / 2) / (0.5 * zoom * size) + moveY;
+            /*  Initialize the complex number to x0 + i*y0.                   */
+            double z_re = x0;
+            double z_im = y0;
 
-            // Reset starting Real and Imaginary parts to zero.
-            newRe = newIm = 0;
-
-            //  Start the iteration process.
-            for(i = 0; i < maxIterations; i++)
+            /*  Start the iteration process. Stop when the iteration diverges *
+             *  outside of the circle, or when too many iterations are done.  */
+            for (iters = 0x00U; iters < max_iters; ++iters)
             {
+                /*  Calculate the next iteration.                             */
+                mandelbrot_iter(&z_re, &z_im, &x0, &y0);
 
-                /*  Remember value of previous iteration.                     */
-                oldRe = newRe;
-                oldIm = newIm;
-
-                /*  Calculate real and imaginary parts.                       */
-                newRe = oldRe * oldRe - oldIm * oldIm + pr;
-                newIm = 2 * oldRe * oldIm + pi;
-
-                //  Check for divergence.
-                if((newRe * newRe + newIm * newIm) > radius_squared)
+                /*  Once the iteration falls outside the circle, abort.       */
+                if (complex_abs_squared(z_re, z_im) > radius_squared)
                     break;
             }
 
-            if(i == maxIterations)
-                color(0, 0, 0, fp);
-            else if (i < 64)
+            /*  Points that don't diverge are the Mandelbrot set. Color black.*/
+            if (iters == max_iters)
+                color(0x00U, 0x00U, 0x00U, fp);
+
+            /*  Points that diverged very quickly. Blue-to-Yellow gradient.   */
+            else if (iters < threshold)
             {
-                brightness = 4*i;
-                color(brightness, brightness, 255-brightness, fp);
+                const unsigned char brightness = iters * color_scale;
+                color(brightness, brightness, 0xFFU - brightness, fp);
             }
+
+            /*  Points that took a long time to diverge, color yellow.        */
             else
-                color(255, 255, 0, fp);
+                color(0xFF, 0xFF, 0x00, fp);
         }
     }
+
+    /*  Close the file and return.                                            */
+    fclose(fp);
     return 0;
 }
+/*  End of main.                                                              */
