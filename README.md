@@ -4,7 +4,8 @@
 
 # Mandelbrot Set <a name="bf"></a>
 Code for rendering the Mandelbrot set and variants.
-![Mandelbrot Set](https://math.dartmouth.edu/~rmaguire/assets/mandelbrot_set_001.png "Mandelbrot Set")
+
+![Mandelbrot Set](https://math.dartmouth.edu/~rmaguire/projects/mandelbrot_set/mandelbrot_set_001.png "Mandelbrot Set")
 
 # License
     mandelbrot_set is free software: you can redistribute it and/or modify
